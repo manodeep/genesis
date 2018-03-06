@@ -1,0 +1,203 @@
+#!/usr/bin/env python
+from __future__ import print_function
+import numpy as np
+import h5py
+from optparse import OptionParser
+
+LHalo_Desc_full = [
+('Descendant',          np.int32),
+('FirstProgenitor',     np.int32),
+('NextProgenitor',      np.int32),
+('FirstHaloInFOFgroup', np.int32),
+('NextHaloInFOFgroup',  np.int32),
+('Len',                 np.int32),
+('M_mean200',           np.float32),
+('Mvir',                np.float32),
+('M_TopHat',            np.float32),
+('Pos',                 (np.float32, 3)),
+('Vel',                 (np.float32, 3)),
+('VelDisp',             np.float32),
+('Vmax',                np.float32),
+('Spin',                (np.float32, 3)),
+('MostBoundID',         np.int64),
+('SnapNum',             np.int32),
+('Filenr',              np.int32),
+('SubHaloIndex',        np.int32),
+('SubHalfMass',         np.float32)
+                 ]
+
+names = [LHalo_Desc_full[i][0] for i in range(len(LHalo_Desc_full))]
+formats = [LHalo_Desc_full[i][1] for i in range(len(LHalo_Desc_full))]
+LHalo_Desc = np.dtype({'names':names, 'formats':formats}, align=True)
+
+id_mult_factor = 1e12
+NumSnaps = 200
+
+def copy_halo_properties(LHalo, TreefrogHalos, treefrog_idx): 
+    """
+    Copies the halo properties (e.g., Mvir, position etc) from the TreefrogHalo data structure into the LHalo data structure.
+
+    Parameters
+    ----------
+
+    LHalo: structured array with dtype 'LHalo_Desc', required
+        LHalo data structure that is to be filled. This is the actual structure not the index.
+    
+    TreefrogHalos: HDF5 file, required
+        HDF5 file that contains all halos at the current snapshot.
+
+    treefrog_idx: integer, required
+        Index (not ID) of the Treefrog Halo that we are copying the propertiesfrom.
+ 
+    """
+    
+    LHalo['Len'] = TreefrogHalos['npart'][treefrog_idx]
+
+    LHalo['M_mean200'] = TreefrogHalos['Mass_200mean'][treefrog_idx]
+    LHalo['Mvir'] = TreefrogHalos['Mass_200mean'][treefrog_idx] ### NOT IN TREEFROG
+    LHalo['M_TopHat'] = TreefrogHalos['Mass_200mean'][treefrog_idx] ### NOT IN TREEFROG
+
+    LHalo['Pos'][0] = TreefrogHalos['Xc'][treefrog_idx]
+    LHalo['Pos'][1] = TreefrogHalos['Yc'][treefrog_idx]
+    LHalo['Pos'][2] = TreefrogHalos['Zc'][treefrog_idx]
+
+    LHalo['Vel'][0] = TreefrogHalos['VXc'][treefrog_idx]
+    LHalo['Vel'][1] = TreefrogHalos['VYc'][treefrog_idx]
+    LHalo['Vel'][2] = TreefrogHalos['VZc'][treefrog_idx]
+
+    LHalo['VelDisp'] = TreefrogHalos['sigV'][treefrog_idx]
+    LHalo['Vmax'] = TreefrogHalos['Vmax'][treefrog_idx]
+
+    LHalo['Spin'][0] = TreefrogHalos['Lx'][treefrog_idx]
+    LHalo['Spin'][1] = TreefrogHalos['Ly'][treefrog_idx]
+    LHalo['Spin'][2] = TreefrogHalos['Lz'][treefrog_idx]
+    
+    LHalo['MostBoundID'] = TreefrogHalos['npart'][treefrog_idx] ### NOT IN TREEFROG
+    LHalo['SnapNum'] = int(TreefrogHalos['ID'][treefrog_idx] / id_mult_factor) # Snapshot of halo is encoded within ID, divide by the factor.
+    
+    return LHalo 
+
+def get_sorted_indices(dataset, snap_key, opt_args):
+    """
+
+    Sorts the input HDF5 dataset using 2-keys given in "opt_args".  The first key specifies the order of the "outer-sort" with the second key specifying the order of the "inner-sort" within each group sorted by the first key. 
+
+    Example:
+        Outer-sort uses ForestID and inner-sort used Mass_200mean.
+        ForestID = [1, 4, 39, 1, 1, 4]
+        Mass_200mean = [4e9, 10e10, 8e8, 7e9, 3e11, 5e6]
+        
+        Then the indices would be [0, 3, 4, 5, 1, 2]
+
+    If the debug option has been specified in the runtime options (opt_args["debug"] == 1), then a check is run to ensure that the sorting has been correctly done.
+
+    Parameters
+    ----------
+
+    dataset: HDF5 dataset, required.
+        Input HDF5 dataset that we are sorting over. The data structure is assumed to be HDF5_File -> List of Snapshot Numbers -> Halo properties/pointers.
+
+    snap_key: String, required.
+        The field name for the snapshot we are accessing.
+
+    opt_args: Dictionary, required.
+        Dictionary containing the option parameters specified at runtime.  Used to specify the field names with are sorting on. 
+        
+    Returns
+    ----------
+
+    indices: numpy-array, required.
+        Array containing the indices that sorts the keys for the specified dataset. 
+
+    """ 
+    indices = np.lexsort((dataset[snap_key][opt_args["sort_mass"]], dataset[snap_key][opt_args["sort_id"]])) # Sorts via the ID then sub-sorts via the mass
+
+    if opt_args["debug"] == 1: 
+        status = check_sorted_indices(f[snap_key][halo_id], f[snap_key][sort_id], f[snap_key][sort_mass], indices, opt_args)
+        if (status == -1):
+            print("Error in the sorted indices using Snapshot Key {0}".format(snap_key))
+            exit()
+
+    return indices
+
+def check_sorted_indices(halo_id, match_id, match_mass, indices, opt_args):
+    """
+
+    Checks the indices of the sorted array to ensure that the sorting has been performed properly. 
+    Only called in the debug option is specified.
+
+    Parameters
+    ----------
+
+    halo_id: HDF5 dataset, required. 
+        The HDF5 dataset containing the IDs of the halos.
+        Note: This is the ID of the halo, not the index of its position.
+    
+    match_id, match_mass: HDF5 dataset, required.
+        The HDF5 dataset containing the fields that the halos were sorted by.  The first dataset is the 'outer-sort' with the second dataset specifying the 'inner-sort'.
+        For Treefrog the default options here are the fields "ForestID" and "Mass_200mean".
+        See "sort_dataset" for specific example with Treefrog.
+
+    indices: array-like, required.
+        Array containing the indices sorted using the specified keys.
+
+    opt_args: Dictionary, required
+        Dictionary containing the option parameters specified at runtime.  Used to print some debug messages.
+
+    Returns
+    ----------
+
+    status: integer
+        1 if the indices have been sorted properly, 0 otherwise.
+
+    """
+    
+    for idx in range(len(indices) -1):        
+        if (match_id[indices[idx]] > match_id[indices[idx + 1]]): # First check to ensure that the sort was done in ascending order.
+
+            print("For Halo ID {0} we had a {4} of {1}.  After sorting via lexsort with key {4}, the next Halo has ID {2} and {4} of {3}.".format(halo_id[indices[idx]], match_id[indices[idx]], halo_id[indices[idx + 1]], match_id[indices[idx + 1]], opt_args["sort_id"]))
+            print("Since we are sorting using {0} they MUST be in ascending order.".format(opt_args["sort_id"]))
+            return -1
+
+        if (match_id[indices[idx]] == match_id[indices[idx + 1]]): # Then for the inner-sort, check that the sort within each ID group was done correctly.
+            if (match_mass[indices[idx]] > match_mass[indices[idx]]):
+
+                print("For Halo ID {0} we had a {4} of {1}.  After sorting via lexsort with key {4}, the next Halo has ID {2} and {4} of {3}.".format(halo_id[indices[idx]], match_id[indices[idx]], halo_id[indices[idx + 1]], match_id[indices[idx + 1]], opt_args["sort_id"]))
+                print("However we have sub-sorted within {0} with the key {1}.  Halo ID {2} has a {1} value of {3} whereas the sequentially next halo with ID {4} has a {1} value of {5}".format(opt_args["sort_id"], opt_args["sort_mass"], halo_id[indices[idx]], match_mass[indices[idx]], halo_id[indices[idx + 1]], mass[indices[idx + 1]])) 
+                print("Since we are sub-sorting using {0} they MUST be in ascending order.".format(opt_args["sort_mass"]))
+                return -1
+
+    return 0
+
+if __name__ == '__main__':
+
+    parser = OptionParser()
+
+    parser.add_option("-f", "--fname", dest="fname", help="Path to the HDF5 data file. Required.")
+    parser.add_option("-s", "--forestID", dest="sort_id", help="Field name for the key we are sorting on. Default: ForestID.", default = "ForestID")
+    parser.add_option("-m", "--mass_def", dest="sort_mass", help="Field name for the mass key we are sorting on. Default: Mass_200mean.", default = "Mass_200mean")
+    parser.add_option("-i", "--ID", dest="halo_id", help="Field name for halo ID. Default: ID.", default = "ID")
+    parser.add_option("-d", "--debug", dest="debug", help="Set to 1 to toggle debug mode. Default: 0 (off).", default = 0)
+
+    (opt, args) = parser.parse_args()
+
+    if (opt.fname == None):
+        parser.print_help()
+        exit()
+
+    halo_id = opt.halo_id
+    print("The HaloID field for each halo is {0}.".format(halo_id)) 
+       
+    sort_id = opt.sort_id
+    print("Sorting on the {0} field.".format(sort_id))
+
+    sort_mass = opt.sort_mass
+    print("Sub-Sorting on the {0} field.".format(sort_mass))
+
+    with h5py.File(opt.fname, "r") as f:
+
+        oldID_to_newID = {} # Dictionary to go from the oldID to the newID.
+        
+        for snap_key in list(f.keys()): # Go through each field within the file.
+            if (snap_key[0] == "S" or snap_key[0] == "s"): # Skip those fields that are not snapshot fields.
+                indices = get_sorted_indices(f, snap_key, vars(opt))
