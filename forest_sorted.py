@@ -5,6 +5,8 @@ import h5py
 from tqdm import tqdm
 from optparse import OptionParser
 
+import inspect
+
 def get_sorted_indices(dataset, snap_key, opt):
     """
 
@@ -72,7 +74,7 @@ def test_sorted_indices(halo_id, match_id, match_mass, indices, opt):
     Returns
     ----------
 
-    None.  Function will raise a RunTimeError if the indices have not been sorted properly. 
+    True if the test passes and the indices have been sorted properly.  Otherwise a RunTimeError is raised. 
 
     """
     
@@ -91,37 +93,47 @@ def test_sorted_indices(halo_id, match_id, match_mass, indices, opt):
                 print("Since we are sub-sorting using {0} they MUST be in ascending order.".format(opt["sort_mass"]))
                 raise RuntimeError                 
 
-def parse_snap_field(Snap_Field):
+def parse_snap_key(snap_key):
     """
 
-    Given the name of a snapshot field, we wish to find the snapshot number associated with this field.
-    This is necessary because the 0th snapshot field may not be snapshot 000 and there could be missing snapshots (snapshot 39 is followed by snapshot 40).
-    The fields passed to this function are usually those which contain the word "Snap" or "snap".
+    Given the name of a snapshot key, we wish to find the snapshot number associated with this key.
+    This is necessary because the 0th snapshot key may not be snapshot 000 and there could be missing snapshots (e.g., snapshot 39 is followed by snapshot 41).
 
-    Note: This logic of handling snapshot fields will fail if the snapshot fields do not include the word 'Snap' or 'snap', and if they contain numbers other than the snapshot number (sNAp_1_032 for example).
+    This function takes the key and searches backwards for a group of digits that identify the snapshot number. 
+    The function will only consider numbers that are clustered together, starting at the end of the snapshot key.  If there are numbers outside of this cluster they will be disregarded and a warning raised.
+    For example, if the key is "Snap1_030", the function will return 30 and issue a warning that there were digits ignored. 
     
     Parameters
     ----------
 
-    Snap_Field: String.  Required. 
-        The name of the snapshot field.    
+    snap_key: String.  Required. 
+        The name of the snapshot key.    
     
     Returns
     ----------
 
     SnapNum: integer.  Required.
-        The snapshot number that corresponds to the snapshot field. 
+        The snapshot number that corresponds to the snapshot key. 
 
     """
 
     SnapNum = ""
+    reached_numbers = False
 
-    for letter in Snap_Field: # Go through each letter within the snapshot field,
-        if (letter.isdigit() == True): # When a number is found,
+    for letter in reversed(snap_key): # Go backwards through the key 
+        if (letter.isdigit() == True): # When a number is found,            
             SnapNum = "{0}{1}".format(SnapNum, letter) # Concatenate that number with the others.
+            reached_numbers = True # Flag that we have encountered a cluster of numbers.
 
-    return int(SnapNum) # Recast as integer before returning.
+        if (letter.isdigit() == False): # When we eventually reach a letter that is not a number,
+            reached_numbers = False # Turn the flag off.
 
+        if (letter.isdigit() == True and reached_numbers == False): # But if we keep going back and encounter a number again, raise a Warning.
+            Warning("For Snapshot key '{0}' there were numbers that were not clustered together at the end of the key.\nWe assume the snapshot number corresponding to this key is {1}; please check that this is correct.".format(snap_key, int(SnapNum))) 
+    
+    SnapNum = SnapNum[::-1] # We searched backwards so flip the string around.
+
+    return int(SnapNum) # Cast as integer before returning.
 
 def parse_inputs():
     """
@@ -165,7 +177,7 @@ def parse_inputs():
 
     return opt
 
-def ID_to_temporalID(index, SnapNum):
+def index_to_temporalID(index, SnapNum):
     """
 
     Given a haloID local to a snapshot with number ``SnapNum``, this function returns the ID that accounts for the snapshot number. 
@@ -206,11 +218,11 @@ def test_check_haloIDs(file_haloIDs, SnapNum):
     Returns
     ----------
 
-    None.  If the haloIDs within the HDF5 file do not match the expected values a ValueError is raised. 
+    True if the test passes and the haloIDs match properly.  Otherwise a ValueError is raised. 
 
     """
 
-    generated_haloIDs = ID_to_temporalID(np.arange(len(file_haloIDs)), SnapNum)
+    generated_haloIDs = index_to_temporalID(np.arange(len(file_haloIDs)), SnapNum)
     
     if (np.array_equal(generated_haloIDs, file_haloIDs) == False):
         raise ValueError("The HaloIDs for snapshot {0} did not match the formula.\nHaloIDs were {1} and the expected IDs were {2}".format(SnapNum, file_haloIDs, generated_haloIDs))
@@ -237,15 +249,10 @@ def copy_field(file_in, file_out, key, field, opt):
 
     """
 
-    ## TODO: Add a check that both the input and output files are open and HDF5 files.
-
-    group_path = file_in[key][field].parent.name
-    group_id = file_out.require_group(group_path)
-    name = "{0}/{1}".format(key, field)
-    f_in.copy(name, group_id, name = field)
-
-    if opt['debug'] == 1:
-        print("Created field {0} for snap_key {1}".format(field, snap_key))
+    group_path = file_in[key][field].parent.name # Get the name of the group path in the input file.
+    group_id = file_out.require_group(group_path) # Create the group (and relevant sub-structure) if necessary.
+    name = "{0}/{1}".format(key, field) # Name the group.
+    f_in.copy(name, group_id, name = field) # Copy over the data.
 
 def test_output_file(snapshot_group_in, snapshot_group_out, SnapNum, indices, opt): 
     """
@@ -271,8 +278,7 @@ def test_output_file(snapshot_group_in, snapshot_group_out, SnapNum, indices, op
     Returns
     ----------
 
-    None. If the test fails a ValueError is raised. 
-
+    True if the test passes and the output file has been written correctly. Otherwise a ValueError is raised.
     """
 
     test_check_haloIDs(snapshot_group_out[opt["halo_id"]], SnapNum) # Test that the new temporally unique haloIDs were done properly.
@@ -286,7 +292,9 @@ def test_output_file(snapshot_group_in, snapshot_group_out, SnapNum, indices, op
         output_data = snapshot_group_out[field][:]
         if (np.array_equal(output_data, input_data_sorted) == False): # Output data must be equal to the sorted input data.
             raise ValueError("For snapshot number {0}, there was a mismatch for field {1} for the sorted input data and the output data\nThe raw input data is {2}, with correpsonding sorted order {3}, which does match the output data of {4}".format(SnapNum, field, input_data, input_data_sorted, output_data))
-     
+    
+    return True
+ 
 if __name__ == '__main__':
 
     opt = parse_inputs()
@@ -294,22 +302,23 @@ if __name__ == '__main__':
     outfile = "/Users/100921091/Desktop/Genesis/my_test.hdf5"
     with h5py.File(opt.fname_in, "r") as f_in,  h5py.File(opt.fname_out, "w") as f_out:
 
-        oldID_to_newID = {} # Dictionary to go from the oldID to the newID.
-     
-        snap_keys = [] 
-        snap_nums = {} 
-        for field in list(f_in.keys()): # Want to generate a list of snapshot fields and the associate snapshot number.            
-            if (field.find("Snap") > -1 or field.find("snap") > -1  or field.find("SNAP") > -1): # .find returns -1 if the string is not found.
-                snap_keys.append(field) # Remember the name of the field. 
-                snap_nums[field] = parse_snap_field(field) # Find out what snapshot number the name corresponds to. 
-        
+        oldID_to_newID = dict() # Dictionary to go from the oldID to the newID.
+    
+        ## We assume that the keys for the snapshot data are named to include the word "snap" (case insensitive). ##
+        ## We also assume that within the snapshot keys, the only numbers are those corresponding to the snapshot number. ##
+        ## E.g., if your snapshot keys are stored as "Snap1_030", then it is incompatible with this code. ## 
+        snap_keys = [key for key in f_in.keys() if (("SNAP" in key.upper()) == True)] # Generate the names for those keys that have the word "snap". 
+        snap_nums = dict() # Dictionary for the snapshot number for each snapshot key.
+        for key in snap_keys: 
+            snap_nums[key] = parse_snap_key(key) # Find out what snapshot number the name corresponds to. 
+       
         ID_maps = {}
         created_dict = 0
         snapshot_indices = {}
 
         print("")
         print("Generating the dictionary to map the oldIDs to the newIDs.") 
-        for snap_key in tqdm(snap_keys):
+        for count, snap_key in enumerate(tqdm(snap_keys)):
             if (len(f_in[snap_key][opt.halo_id]) == 0): # If there aren't any halos at this snapshot, move along.
                 continue 
 
@@ -318,7 +327,7 @@ if __name__ == '__main__':
 
             indices = get_sorted_indices(f_in, snap_key, vars(opt)) # Get the indices that will correctly sort the snapshot dataset by ForestID and halo mass.
             old_haloIDs = f_in[snap_key][opt.halo_id][:][indices] # Grab the HaloIDs in the sorted order.
-            new_haloIDs = ID_to_temporalID(np.arange(len(indices)), snap_nums[snap_key]) # Generate new IDs.                       
+            new_haloIDs = index_to_temporalID(np.arange(len(indices)), snap_nums[snap_key]) # Generate new IDs.                       
             oldIDs_to_newIDs = dict(zip(old_haloIDs, new_haloIDs)) # Create a dictionary mapping between the old and new IDs.
             
             snapshot_indices[snap_key] = indices # Move the indices a dictionary keyed by the snapshot field.
@@ -328,7 +337,7 @@ if __name__ == '__main__':
             if created_dict == 0:
                 ID_maps = oldIDs_to_newIDs
                 created_dict = 1                                
-            else: 
+            else:
                 ID_maps = {**ID_maps, **oldIDs_to_newIDs} # Taken from https://stackoverflow.com/questions/8930915/append-dictionary-to-a-dictionary 
         print("Done!")
         print("")
