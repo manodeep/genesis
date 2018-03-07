@@ -161,6 +161,7 @@ def parse_inputs():
     parser.add_option("-i", "--HaloID", dest="halo_id", help="Field name for halo ID. Default: ID.", default = "ID")
     parser.add_option("-d", "--debug", dest="debug", help="Set to 1 to toggle debug mode. Default: 0 (off).", default = 0)
     parser.add_option("-p", "--ID_fields", dest="ID_fields", help="Field names for those that contain IDs.  Default: ('ID', 'Tail', 'Head', 'NextSubHalo', 'Dummy1', 'Dumm2').", default = ("ID", "Tail", "Head", "NextSubHalo", "Dummy", "Dummy")) 
+    parser.add_option("-x", "--index_mult_factor", dest="index_mult_factor", help="Conversion factor to go from a unique, per-snapshot halo index to a temporally unique haloID.  Default: 1e12.", default = 1e12)
 
     (opt, args) = parser.parse_args()
 
@@ -177,7 +178,7 @@ def parse_inputs():
 
     return opt
 
-def index_to_temporalID(index, SnapNum):
+def index_to_temporalID(index, SnapNum, index_mult_factor):
     """
 
     Given a haloID local to a snapshot with number ``SnapNum``, this function returns the ID that accounts for the snapshot number. 
@@ -187,8 +188,12 @@ def index_to_temporalID(index, SnapNum):
 
     index: array-like of integers, or integer. Required.
         Array or single value that describes the snapshot-local haloID.
-    SnapNum: integer. Required
+
+    SnapNum: integer.  Required
         Snapshot that the halo/s are/is located at.
+
+    index_mult_factor: integer. Required
+        Factor to convert a the snapshot-unique halo index to a temporally-unique halo ID.
  
     Returns
     ----------
@@ -197,11 +202,38 @@ def index_to_temporalID(index, SnapNum):
         Array or single value that contains the temporally unique haloID.         
     """
 
-    temporalID = SnapNum*int(1e12) + index + 1
+    temporalID = SnapNum*int(index_mult_factor) + index + 1
 
     return temporalID
 
-def test_check_haloIDs(file_haloIDs, SnapNum):
+
+def temporalID_to_SnapNum(temporalID, index_mult_factor): 
+    """
+
+    Given a temporalID, this function returns the snapshot number that corresponds to the ID. 
+    
+    Parameters
+    ----------
+
+    ID: array-like of integers, or integer. Required.
+        Array or single value that describes the temporalID/s. 
+
+    index_mult_factor: integer. Requied.
+        Factor to convert a the snapshot-unique halo index to a temporally-unique halo ID.
+         
+    Returns
+    ----------
+
+    SnapNum: array-like of integers, or integer. Required.    
+        Array or single value that contains the snapshot number corresponding to the temporal ID. 
+    """
+
+    SnapNum = (temporalID - 1) / index_mult_factor
+
+    return int(SnapNum)
+
+
+def test_check_haloIDs(file_haloIDs, SnapNum, index_mult_factor):
     """
 
     As all haloIDs are temporally unique, given the snapshot number we should be able to recreate the haloIDs. 
@@ -222,7 +254,7 @@ def test_check_haloIDs(file_haloIDs, SnapNum):
 
     """
 
-    generated_haloIDs = index_to_temporalID(np.arange(len(file_haloIDs)), SnapNum)
+    generated_haloIDs = index_to_temporalID(np.arange(len(file_haloIDs)), SnapNum, index_mult_factor)
     
     if (np.array_equal(generated_haloIDs, file_haloIDs) == False):
         raise ValueError("The HaloIDs for snapshot {0} did not match the formula.\nHaloIDs were {1} and the expected IDs were {2}".format(SnapNum, file_haloIDs, generated_haloIDs))
@@ -281,7 +313,7 @@ def test_output_file(snapshot_group_in, snapshot_group_out, SnapNum, indices, op
     True if the test passes and the output file has been written correctly. Otherwise a ValueError is raised.
     """
 
-    test_check_haloIDs(snapshot_group_out[opt["halo_id"]], SnapNum) # Test that the new temporally unique haloIDs were done properly.
+    test_check_haloIDs(snapshot_group_out[opt["halo_id"]], SnapNum, opt["index_mult_factor"]) # Test that the new temporally unique haloIDs were done properly.
     test_sorted_indices(snapshot_group_out[opt["halo_id"]], snapshot_group_out[opt["sort_id"]], snapshot_group_out[opt["sort_mass"]], np.arange(0, len(snapshot_group_out[opt["halo_id"]])), opt) # Test that the sorting using the ``sort_id`` ('ForestID' in Treefrog) and ``sort_mass`` ('Mass_200mean' in Treefrog) were performed properly. If they're sorted properly, the indices that "sort" them should correspond to a simply np.arange.
    
     for field in snapshot_group_out.keys(): # Now let's check each field.
@@ -325,15 +357,18 @@ if __name__ == '__main__':
                 continue 
 
             if opt.debug:
-                test_check_haloIDs(f_in[snap_key][opt.halo_id], snap_nums[snap_key])
+                test_check_haloIDs(f_in[snap_key][opt.halo_id], snap_nums[snap_key], opt.index_mult_factor)
 
             indices = get_sorted_indices(f_in, snap_key, vars(opt)) # Get the indices that will correctly sort the snapshot dataset by ForestID and halo mass.
             old_haloIDs = f_in[snap_key][opt.halo_id][:][indices] # Grab the HaloIDs in the sorted order.
-            new_haloIDs = index_to_temporalID(np.arange(len(indices)), snap_nums[snap_key]) # Generate new IDs.                       
+            new_haloIDs = index_to_temporalID(np.arange(len(indices)), snap_nums[snap_key], opt.index_mult_factor) # Generate new IDs.
             oldIDs_to_newIDs = dict(zip(old_haloIDs, new_haloIDs)) # Create a dictionary mapping between the old and new IDs.
             
             snapshot_indices[snap_key] = indices # Move the indices a dictionary keyed by the snapshot field.
-            
+           
+            ID_maps[snap_nums[snap_key]] = oldIDs_to_newIDs
+
+            ''' 
             ## We need a dictionary that contains ID mappings for every snapshot (for merger pointers). ##
             ## If this is the first snapshot with halos, create the dictionary, otherwise append it to the global one. ##
             if created_dict == 0:
@@ -341,6 +376,7 @@ if __name__ == '__main__':
                 created_dict = 1                                
             else:
                 ID_maps = {**ID_maps, **oldIDs_to_newIDs} # Taken from https://stackoverflow.com/questions/8930915/append-dictionary-to-a-dictionary 
+            '''
         end_time = time.time() 
         if opt.debug:
             print("Creation of dictionary map took {0:3f} seconds".format(end_time - start_time))
@@ -365,8 +401,9 @@ if __name__ == '__main__':
 
                 for idx in range(len(f_in[key][opt.halo_id])): # Loop through each halo within the field.
                     if (field in opt.ID_fields) == True: # If we need to update the ID for this field.                        
-                        oldID = f_in[key][field][idx] 
-                        f_out[key][field][idx] = ID_maps[oldID] # Overwrite the oldID with the newID.
+                        oldID = f_in[key][field][idx] # Grab the old ID.
+                        SnapNum = temporalID_to_SnapNum(oldID, opt.index_mult_factor) # Get the snapshot number that corresponds to the oldID.
+                        f_out[key][field][idx] = ID_maps[SnapNum][oldID] # ID_maps is master-keyed by the snapshot number of the ID. 
 
                 if len(f_in[key][opt.halo_id]) > 0:
                     f_out[key][field][:] = f_out[key][field][:][snapshot_indices[key]] # Then reorder the properties to be in the sorted order.
