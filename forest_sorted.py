@@ -2,6 +2,7 @@
 from __future__ import print_function
 import numpy as np
 import h5py
+from tqdm import tqdm
 from optparse import OptionParser
 
 LHalo_Desc_full = [
@@ -33,54 +34,10 @@ LHalo_Desc = np.dtype({'names':names, 'formats':formats}, align=True)
 id_mult_factor = 1e12
 NumSnaps = 200
 
-def copy_halo_properties(LHalo, TreefrogHalos, treefrog_idx): 
-    """
-    Copies the halo properties (e.g., Mvir, position etc) from the TreefrogHalo data structure into the LHalo data structure.
-
-    Parameters
-    ----------
-
-    LHalo: structured array with dtype 'LHalo_Desc', required
-        LHalo data structure that is to be filled. This is the actual structure not the index.
-    
-    TreefrogHalos: HDF5 file, required
-        HDF5 file that contains all halos at the current snapshot.
-
-    treefrog_idx: integer, required
-        Index (not ID) of the Treefrog Halo that we are copying the propertiesfrom.
- 
-    """
-    
-    LHalo['Len'] = TreefrogHalos['npart'][treefrog_idx]
-
-    LHalo['M_mean200'] = TreefrogHalos['Mass_200mean'][treefrog_idx]
-    LHalo['Mvir'] = TreefrogHalos['Mass_200mean'][treefrog_idx] ### NOT IN TREEFROG
-    LHalo['M_TopHat'] = TreefrogHalos['Mass_200mean'][treefrog_idx] ### NOT IN TREEFROG
-
-    LHalo['Pos'][0] = TreefrogHalos['Xc'][treefrog_idx]
-    LHalo['Pos'][1] = TreefrogHalos['Yc'][treefrog_idx]
-    LHalo['Pos'][2] = TreefrogHalos['Zc'][treefrog_idx]
-
-    LHalo['Vel'][0] = TreefrogHalos['VXc'][treefrog_idx]
-    LHalo['Vel'][1] = TreefrogHalos['VYc'][treefrog_idx]
-    LHalo['Vel'][2] = TreefrogHalos['VZc'][treefrog_idx]
-
-    LHalo['VelDisp'] = TreefrogHalos['sigV'][treefrog_idx]
-    LHalo['Vmax'] = TreefrogHalos['Vmax'][treefrog_idx]
-
-    LHalo['Spin'][0] = TreefrogHalos['Lx'][treefrog_idx]
-    LHalo['Spin'][1] = TreefrogHalos['Ly'][treefrog_idx]
-    LHalo['Spin'][2] = TreefrogHalos['Lz'][treefrog_idx]
-    
-    LHalo['MostBoundID'] = TreefrogHalos['npart'][treefrog_idx] ### NOT IN TREEFROG
-    LHalo['SnapNum'] = int(TreefrogHalos['ID'][treefrog_idx] / id_mult_factor) # Snapshot of halo is encoded within ID, divide by the factor.
-    
-    return LHalo 
-
-def get_sorted_indices(dataset, snap_key, opt_args):
+def get_sorted_indices(dataset, snap_key, opt):
     """
 
-    Sorts the input HDF5 dataset using 2-keys given in "opt_args".  The first key specifies the order of the "outer-sort" with the second key specifying the order of the "inner-sort" within each group sorted by the first key. 
+    Sorts the input HDF5 dataset using 2-keys given in "opt".  The first key specifies the order of the "outer-sort" with the second key specifying the order of the "inner-sort" within each group sorted by the first key. 
 
     Example:
         Outer-sort uses ForestID and inner-sort used Mass_200mean.
@@ -89,7 +46,7 @@ def get_sorted_indices(dataset, snap_key, opt_args):
         
         Then the indices would be [0, 3, 4, 5, 1, 2]
 
-    If the debug option has been specified in the runtime options (opt_args["debug"] == 1), then a check is run to ensure that the sorting has been correctly done.
+    If the debug option has been specified in the runtime options (opt["debug"] == 1), then a check is run to ensure that the sorting has been correctly done.
 
     Parameters
     ----------
@@ -100,7 +57,7 @@ def get_sorted_indices(dataset, snap_key, opt_args):
     snap_key: String, required.
         The field name for the snapshot we are accessing.
 
-    opt_args: Dictionary, required.
+    opt: Dictionary, required.
         Dictionary containing the option parameters specified at runtime.  Used to specify the field names with are sorting on. 
         
     Returns
@@ -110,16 +67,14 @@ def get_sorted_indices(dataset, snap_key, opt_args):
         Array containing the indices that sorts the keys for the specified dataset. 
 
     """ 
-    indices = np.lexsort((dataset[snap_key][opt_args["sort_mass"]], dataset[snap_key][opt_args["sort_id"]])) # Sorts via the ID then sub-sorts via the mass
+    indices = np.lexsort((dataset[snap_key][opt["sort_mass"]], dataset[snap_key][opt["sort_id"]])) # Sorts via the ID then sub-sorts via the mass
 
-    if opt_args["debug"] == 1: 
-        test_sorted_indices(f[snap_key][halo_id], f[snap_key][sort_id], f[snap_key][sort_mass], indices, opt_args)
-
-        #assert(len(indices) == len(dataset[snap_key][opt_args["sort_id"]])) Put it in previous function.
+    if opt["debug"] == 1: 
+        test_sorted_indices(f[snap_key][halo_id], f[snap_key][sort_id], f[snap_key][sort_mass], indices, opt)
 
     return indices
 
-def test_sorted_indices(halo_id, match_id, match_mass, indices, opt_args):
+def test_sorted_indices(halo_id, match_id, match_mass, indices, opt):
     """
 
     Checks the indices of the sorted array to ensure that the sorting has been performed properly. 
@@ -140,7 +95,7 @@ def test_sorted_indices(halo_id, match_id, match_mass, indices, opt_args):
     indices: array-like, required.
         Array containing the indices sorted using the specified keys.
 
-    opt_args: Dictionary, required
+    opt: Dictionary, required
         Dictionary containing the option parameters specified at runtime.  Used to print some debug messages.
 
     Returns
@@ -154,16 +109,16 @@ def test_sorted_indices(halo_id, match_id, match_mass, indices, opt_args):
     for idx in range(len(indices) -1):        
         if (match_id[indices[idx]] > match_id[indices[idx + 1]]): # First check to ensure that the sort was done in ascending order.
 
-            print("For Halo ID {0} we had a {4} of {1}.  After sorting via lexsort with key {4}, the next Halo has ID {2} and {4} of {3}.".format(halo_id[indices[idx]], match_id[indices[idx]], halo_id[indices[idx + 1]], match_id[indices[idx + 1]], opt_args["sort_id"]))
-            print("Since we are sorting using {0} they MUST be in ascending order.".format(opt_args["sort_id"]))
+            print("For Halo ID {0} we had a {4} of {1}.  After sorting via lexsort with key {4}, the next Halo has ID {2} and {4} of {3}.".format(halo_id[indices[idx]], match_id[indices[idx]], halo_id[indices[idx + 1]], match_id[indices[idx + 1]], opt["sort_id"]))
+            print("Since we are sorting using {0} they MUST be in ascending order.".format(opt["sort_id"]))
             #raise Blah 
 
         if (match_id[indices[idx]] == match_id[indices[idx + 1]]): # Then for the inner-sort, check that the sort within each ID group was done correctly.
             if (match_mass[indices[idx]] > match_mass[indices[idx]]):
 
-                print("For Halo ID {0} we had a {4} of {1}.  After sorting via lexsort with key {4}, the next Halo has ID {2} and {4} of {3}.".format(halo_id[indices[idx]], match_id[indices[idx]], halo_id[indices[idx + 1]], match_id[indices[idx + 1]], opt_args["sort_id"]))
-                print("However we have sub-sorted within {0} with the key {1}.  Halo ID {2} has a {1} value of {3} whereas the sequentially next halo with ID {4} has a {1} value of {5}".format(opt_args["sort_id"], opt_args["sort_mass"], halo_id[indices[idx]], match_mass[indices[idx]], halo_id[indices[idx + 1]], mass[indices[idx + 1]])) 
-                print("Since we are sub-sorting using {0} they MUST be in ascending order.".format(opt_args["sort_mass"]))
+                print("For Halo ID {0} we had a {4} of {1}.  After sorting via lexsort with key {4}, the next Halo has ID {2} and {4} of {3}.".format(halo_id[indices[idx]], match_id[indices[idx]], halo_id[indices[idx + 1]], match_id[indices[idx + 1]], opt["sort_id"]))
+                print("However we have sub-sorted within {0} with the key {1}.  Halo ID {2} has a {1} value of {3} whereas the sequentially next halo with ID {4} has a {1} value of {5}".format(opt["sort_id"], opt["sort_mass"], halo_id[indices[idx]], match_mass[indices[idx]], halo_id[indices[idx + 1]], mass[indices[idx + 1]])) 
+                print("Since we are sub-sorting using {0} they MUST be in ascending order.".format(opt["sort_mass"]))
                 #raise Blah 
 
 
@@ -219,14 +174,14 @@ def test_check_haloIDs(snap_file, SnapNum, opt):
     print("Snapshot {0} passed check_haloIDs".format(SnapNum))
 
 
-def copy_field(file_in, file_out, snap_key, field, opt_args):
+def copy_field(file_in, file_out, snap_key, field, opt):
 
     group_path = file_in[snap_key][field].parent.name
     group_id = file_out.require_group(group_path)
     name = "{0}/{1}".format(snap_key, field)
     f_in.copy(name, group_id, name = field)
 
-    if opt.args['debug'] == 1:
+    if opt['debug'] == 1:
         print("Created field {0} for snap_key {1}".format(field, snap_key))
  
 if __name__ == '__main__':
@@ -247,14 +202,12 @@ if __name__ == '__main__':
         
         ID_maps = {}
         snapshot_indices = {}
- 
-        for snap_key in snap_fields:
-            print(snap_key)
+
+        print("")
+        print("Generating the dictionary to map the oldIDs to the newIDs.") 
+        for snap_key in tqdm(snap_fields):
             if (len(f_in[snap_key][opt.halo_id]) == 0): # If there aren't any halos at this snapshot, move along.
                 continue 
-
-            #for field in f_in[snap_key]:
-            #    print(field in opt.ID_fields)
 
             if opt.debug:
                 test_check_haloIDs(f_in[snap_key], snap_nums[snap_key], vars(opt))
@@ -266,14 +219,18 @@ if __name__ == '__main__':
             
             snapshot_indices[snap_key] = indices # Move the indices and the map dictionary to a dictionary keyed by the snapshot field. 
             ID_maps[snap_key] = oldIDs_to_newIDs
-                                    
+        print("Done!")
+        print("")
+
         ## At this point we have the dictionaries that map the oldIDs to the newIDs in addition to the indices that control the sorting of the array. ##
         ## At this point we can loop through all the fields within each halo halo within each snapshot and if the field is 'ID', 'Tail', etc, generate the new field using the oldID->newID map. ##
         ## While going through each field, we will then write out the data into a new HDF5 file in the order specified by indices; write(read_file[field][indices]). ## 
 
-        for snap_key in snap_fields: # Loop through snapshots.            
-            for field in f_in[snap_key]: # Loop through each field 
-                copy_field(f_in, f_out, snap_key, field) # Copy the field into the output file. 
+        print("")
+        print("Now writing out the snapshots in the sorted order.")
+        for key in tqdm(snap_fields): # Loop through all the fields. 
+            for field in f_in[key]: # Loop through each field.
+                copy_field(f_in, f_out, snap_key, field, vars(opt)) # Copy the field into the output file. 
                 for idx in range(len(f_in[snap_key][opt.halo_id])): # Loop through each halo within the field.
                     if (field in opt.ID_fields) == True: # If we need to update the ID for this field.                    
                         oldID = f_in[snap_key][opt.halo_id][idx] 
@@ -281,4 +238,5 @@ if __name__ == '__main__':
 
                 if len(f_in[snap_key][opt.halo_id]) > 0:
                     f_out[snap_key][field][:] = f_out[snap_key][field][:][snapshot_indices[snap_key]] # Then reorder the properties to be in the sorted order.
- 
+        print("Done!")
+        print("")        
