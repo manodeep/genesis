@@ -5,7 +5,7 @@ import h5py
 from tqdm import tqdm
 from optparse import OptionParser
 
-import inspect
+import time
 
 def get_sorted_indices(dataset, snap_key, opt):
     """
@@ -317,7 +317,9 @@ if __name__ == '__main__':
         snapshot_indices = {}
 
         print("")
-        print("Generating the dictionary to map the oldIDs to the newIDs.") 
+        print("Generating the dictionary to map the oldIDs to the newIDs.")
+        if opt.debug:
+            start_time = time.time() 
         for count, snap_key in enumerate(tqdm(snap_keys)):
             if (len(f_in[snap_key][opt.halo_id]) == 0): # If there aren't any halos at this snapshot, move along.
                 continue 
@@ -339,8 +341,12 @@ if __name__ == '__main__':
                 created_dict = 1                                
             else:
                 ID_maps = {**ID_maps, **oldIDs_to_newIDs} # Taken from https://stackoverflow.com/questions/8930915/append-dictionary-to-a-dictionary 
+        end_time = time.time() 
+        if opt.debug:
+            print("Creation of dictionary map took {0:3f} seconds".format(end_time - start_time))
         print("Done!")
         print("")
+
 
         ## At this point we have the dictionaries that map the oldIDs to the newIDs in addition to the indices that control the sorting of the array. ##
         ## At this point we can loop through all the fields within each halo halo within each snapshot and if the field is 'ID', 'Tail', etc, generate the new field using the oldID->newID map. ##
@@ -348,6 +354,8 @@ if __name__ == '__main__':
 
         print("")
         print("Now writing out the snapshots in the sorted order.")
+        if opt.debug:
+            start_time = time.time() 
         for count, key in (enumerate(f_in.keys())): # Loop through snapshots.            
             for field in f_in[key]: # Loop through each field 
 
@@ -368,5 +376,8 @@ if __name__ == '__main__':
  
             if (count > 20 and opt.debug):
                 break
+        if opt.debug:
+            end_time = time.time() 
+            print("Writing of snapshots took {0:3f} seconds".format(end_time - start_time))
         print("Done!")        
         print("")        
