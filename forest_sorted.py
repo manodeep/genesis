@@ -364,25 +364,14 @@ if __name__ == '__main__':
             new_haloIDs = index_to_temporalID(np.arange(len(indices)), snap_nums[snap_key], opt.index_mult_factor) # Generate new IDs.
             oldIDs_to_newIDs = dict(zip(old_haloIDs, new_haloIDs)) # Create a dictionary mapping between the old and new IDs.
             
-            snapshot_indices[snap_key] = indices # Move the indices a dictionary keyed by the snapshot field.
-           
-            ID_maps[snap_nums[snap_key]] = oldIDs_to_newIDs
+            snapshot_indices[snap_key] = indices # Move the indices to a dictionary keyed by the snapshot field.
+            ID_maps[snap_nums[snap_key]] = oldIDs_to_newIDs # Move the IDmaps to a nested dictionary keyed by the snapshot number. 
 
-            ''' 
-            ## We need a dictionary that contains ID mappings for every snapshot (for merger pointers). ##
-            ## If this is the first snapshot with halos, create the dictionary, otherwise append it to the global one. ##
-            if created_dict == 0:
-                ID_maps = oldIDs_to_newIDs
-                created_dict = 1                                
-            else:
-                ID_maps = {**ID_maps, **oldIDs_to_newIDs} # Taken from https://stackoverflow.com/questions/8930915/append-dictionary-to-a-dictionary 
-            '''
         end_time = time.time() 
         if opt.debug:
             print("Creation of dictionary map took {0:3f} seconds".format(end_time - start_time))
         print("Done!")
         print("")
-
 
         ## At this point we have the dictionaries that map the oldIDs to the newIDs in addition to the indices that control the sorting of the array. ##
         ## At this point we can loop through all the fields within each halo halo within each snapshot and if the field is 'ID', 'Tail', etc, generate the new field using the oldID->newID map. ##
