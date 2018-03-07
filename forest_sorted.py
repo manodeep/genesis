@@ -170,10 +170,7 @@ def test_check_haloIDs(snap_file, SnapNum, opt):
     
     if (np.array_equal(targetIDs, haloIDs) == False):
         raise ValueError("The HaloIDs did not match the formula!")
-
-    print("Snapshot {0} passed check_haloIDs".format(SnapNum))
-
-
+    
 def copy_field(file_in, file_out, snap_key, field, opt):
 
     group_path = file_in[snap_key][field].parent.name
@@ -228,6 +225,21 @@ if __name__ == '__main__':
 
         print("")
         print("Now writing out the snapshots in the sorted order.")
+
+        for count, snap_key in tqdm(enumerate(snap_fields)): # Loop through snapshots.            
+            for field in f_in[snap_key]: # Loop through each field 
+                copy_field(f_in, f_out, snap_key, field, vars(opt)) # Copy the field into the output file. 
+                for idx in range(len(f_in[snap_key][opt.halo_id])): # Loop through each halo within the field.
+                    if (field in opt.ID_fields) == True: # If we need to update the ID for this field.                    
+                        oldID = f_in[snap_key][opt.halo_id][idx] 
+                        f_out[snap_key][field][idx] = ID_maps[snap_key][oldID] # Overwrite the oldID with the newID.  We can overwrite because we now 
+
+                if len(f_in[snap_key][opt.halo_id]) > 0:
+                    f_out[snap_key][field][:] = f_out[snap_key][field][:][snapshot_indices[snap_key]] # Then reorder the properties to be in the sorted order.
+            if (count > 20 and opt.debug):
+                exit()
+
+        '''
         for key in tqdm(snap_fields): # Loop through all the fields. 
             for field in f_in[key]: # Loop through each field.
                 copy_field(f_in, f_out, snap_key, field, vars(opt)) # Copy the field into the output file. 
@@ -238,5 +250,6 @@ if __name__ == '__main__':
 
                 if len(f_in[snap_key][opt.halo_id]) > 0:
                     f_out[snap_key][field][:] = f_out[snap_key][field][:][snapshot_indices[snap_key]] # Then reorder the properties to be in the sorted order.
+        '''
         print("Done!")
         print("")        
