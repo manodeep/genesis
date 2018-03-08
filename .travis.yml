@@ -1,0 +1,23 @@
+language: python
+
+python:
+  - '3.4'
+  - '3.5'
+  - '3.6'
+
+
+install:
+  - git clone https://github.com/manodeep/genesis.git
+  - python setup.py install
+
+script:
+  - python -c "import genesis"
+  - python -c "import genesis; print(genesis.__version__)"
+
+notifications:
+  email:
+    recipients:
+      - manodeep@gmail.com
+    on_success: change
+    on_failure: always
+  
