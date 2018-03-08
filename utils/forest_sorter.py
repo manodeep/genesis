@@ -7,6 +7,49 @@ from optparse import OptionParser
 
 import time
 
+def parse_inputs():
+    """
+
+    Parses the command line input arguments.  If there has not been an input or output file name specified a RuntimeError will be raised. 
+    
+    Parameters
+    ----------
+
+    None.   
+ 
+    Returns
+    ----------
+
+    opt: optparse.Values.  Required.  
+        Values from the OptionParser package.  Values are accessed through ``opt.Value`` and cast into a dictionary using ``vars(opt)`` 
+    """
+
+    parser = OptionParser()
+
+    parser.add_option("-f", "--fname_in", dest="fname_in", help="Path to the input HDF5 data file. Required.")
+    parser.add_option("-o", "--fname_out", dest="fname_out", help="Path to the output HDF5 data file. Required.")
+    parser.add_option("-s", "--sort_id", dest="sort_id", help="Field name for the key we are sorting on. Default: ForestID.", default = "ForestID")
+    parser.add_option("-m", "--mass_def", dest="sort_mass", help="Field name for the mass key we are sorting on. Default: Mass_200mean.", default = "Mass_200mean")
+    parser.add_option("-i", "--HaloID", dest="halo_id", help="Field name for halo ID. Default: ID.", default = "ID")
+    parser.add_option("-d", "--debug", dest="debug", help="Set to 1 to toggle debug mode. Default: 0 (off).", default = 0)
+    parser.add_option("-p", "--ID_fields", dest="ID_fields", help="Field names for those that contain IDs.  Default: ('ID', 'Tail', 'Head', 'NextSubHalo', 'Dummy1', 'Dumm2').", default = ("ID", "Tail", "Head", "NextSubHalo", "Dummy", "Dummy")) 
+    parser.add_option("-x", "--index_mult_factor", dest="index_mult_factor", help="Conversion factor to go from a unique, per-snapshot halo index to a temporally unique haloID.  Default: 1e12.", default = 1e12)
+
+    (opt, args) = parser.parse_args()
+
+    if (opt.fname_in == None or opt.fname_out == None): # If the required parameters have not been supplied, throw an exception.
+        parser.print_help()
+        raise RuntimeError
+
+    # Print some useful startup info. #
+    print("")
+    print("The HaloID field for each halo is '{0}'.".format(opt.halo_id)) 
+    print("Sorting on the '{0}' field.".format(opt.sort_id))
+    print("Sub-Sorting on the '{0}' field.".format(opt.sort_mass))
+    print("")
+
+    return opt
+
 def get_sort_indices(dataset, snap_key, opt):
     """
 
@@ -86,49 +129,6 @@ def snap_key_to_snapnum(snap_key):
 
     return int(snapnum) # Cast as integer before returning.
 
-def parse_inputs():
-    """
-
-    Parses the command line input arguments.  If there has not been an input or output file name specified a RuntimeError will be raised. 
-    
-    Parameters
-    ----------
-
-    None.   
- 
-    Returns
-    ----------
-
-    opt: optparse.Values.  Required.  
-        Values from the OptionParser package.  Values are accessed through ``opt.Value`` and cast into a dictionary using ``vars(opt)`` 
-    """
-
-    parser = OptionParser()
-
-    parser.add_option("-f", "--fname_in", dest="fname_in", help="Path to the input HDF5 data file. Required.")
-    parser.add_option("-o", "--fname_out", dest="fname_out", help="Path to the output HDF5 data file. Required.")
-    parser.add_option("-s", "--sort_id", dest="sort_id", help="Field name for the key we are sorting on. Default: ForestID.", default = "ForestID")
-    parser.add_option("-m", "--mass_def", dest="sort_mass", help="Field name for the mass key we are sorting on. Default: Mass_200mean.", default = "Mass_200mean")
-    parser.add_option("-i", "--HaloID", dest="halo_id", help="Field name for halo ID. Default: ID.", default = "ID")
-    parser.add_option("-d", "--debug", dest="debug", help="Set to 1 to toggle debug mode. Default: 0 (off).", default = 0)
-    parser.add_option("-p", "--ID_fields", dest="ID_fields", help="Field names for those that contain IDs.  Default: ('ID', 'Tail', 'Head', 'NextSubHalo', 'Dummy1', 'Dumm2').", default = ("ID", "Tail", "Head", "NextSubHalo", "Dummy", "Dummy")) 
-    parser.add_option("-x", "--index_mult_factor", dest="index_mult_factor", help="Conversion factor to go from a unique, per-snapshot halo index to a temporally unique haloID.  Default: 1e12.", default = 1e12)
-
-    (opt, args) = parser.parse_args()
-
-    if (opt.fname_in == None or opt.fname_out == None): # If the required parameters have not been supplied, throw an exception.
-        parser.print_help()
-        raise RuntimeError
-
-    # Print some useful startup info. #
-    print("")
-    print("The HaloID field for each halo is '{0}'.".format(opt.halo_id)) 
-    print("Sorting on the '{0}' field.".format(opt.sort_id))
-    print("Sub-Sorting on the '{0}' field.".format(opt.sort_mass))
-    print("")
-
-    return opt
-
 def index_to_temporalID(index, snapnum, index_mult_factor):
     """
 
@@ -186,18 +186,20 @@ def temporalID_to_snapnum(temporalID, index_mult_factor):
 
     return snapnum
     
-def copy_field(file_in, file_out, key, field, opt):
+def copy_group(file_in, file_out, key, opt):
     """
 
-    Copies the field (and it's nested data-structure) within a HDF5 group into a new HDF5 file with the same data-structure.
+    Copies a group (and it's nested data-structure) within a HDF5 group into a new HDF5 file with the same data-structure.
  
     Parameters
     ----------
 
     file_in, file_out: Open HDF5 files.  Required.
         HDF5 files for the data being copied (file_in) and the file the data is being copied to (file_out). 
-    key, field: Strings.  Required.
-        Name of the HDF5 group/dataset being copied. 
+
+    key: String.  Required.
+        Name of the HDF5 group being copied. 
+
     opt: Dictionary.  Required.
         Dictionary containing the option parameters specified at runtime.  Used to specify the field names we are sorting on. 
      
@@ -208,15 +210,36 @@ def copy_field(file_in, file_out, key, field, opt):
 
     """
 
-    group_path = file_in[key][field].parent.name # Get the name of the group path in the input file.
+    group_path = file_in[key].parent.name # Get the name of the group path in the input file.
     group_id = file_out.require_group(group_path) # Create the group (and relevant sub-structure) if necessary.
-    name = "{0}/{1}".format(key, field) # Name the group.
-    file_in.copy(name, group_id, name = field) # Copy over the data.
-
+    name = "{0}".format(key) # Name the group.
+    file_in.copy(name, group_id, name = key) # Copy over the data.
 
 def sort_and_write_file(opt):
+    """
 
-    with h5py.File(opt["fname_in"], "r") as f_in,  h5py.File(opt["fname_out"], "w") as f_out:
+    Using the options specified by the command line, sorts the HDF5
+    file by the specified ID field and then sub-sorts by the specified
+    mass field.
+
+    The output file will be saved in this sorted order. 
+ 
+    Parameters
+    ----------
+
+    opt: Dictionary.  Required.
+        Contains the runtime variables such as input/output file names
+        and fields required for sorting.
+        For full contents of the dictionary refer to ``parse_inputs``.  
+     
+    Returns
+    ----------
+
+    None. 
+
+    """
+
+    with h5py.File(opt["fname_in"], "r") as f_in, h5py.File(opt["fname_out"], "w") as f_out:
     
         # We assume that the snapshot data keys are named to include the word "snap" (case
         # insensitive). We also assume that the snapshot number for each snapshot key will 
@@ -266,13 +289,11 @@ def sort_and_write_file(opt):
 
         print("")
         print("Now writing out the snapshots in the sorted order.")
-        if opt["debug"]:
-            start_time = time.time()
+        start_time = time.time()
  
-        for count, key in (enumerate(f_in.keys())):  # Loop through snapshots.            
+        for count, key in (enumerate(f_in.keys())):  # Loop through snapshots.           
+            copy_group(f_in, f_out, key, opt)
             for field in f_in[key]:  # Then through each field 
-
-                copy_field(f_in, f_out, key, field, opt)
 
                 # Only need to do the sorting for keys that are snapshots with Halos. 
                 try: 
@@ -296,9 +317,9 @@ def sort_and_write_file(opt):
 
             if (count > 20) and (opt["debug"]):
                 break
-        if opt["debug"]:
-            end_time = time.time() 
-            print("Writing of snapshots took {0:3f} seconds".format(end_time - start_time))
+
+        end_time = time.time() 
+        print("Writing of snapshots took {0:3f} seconds".format(end_time - start_time))
         print("Done!")        
         print("")        
 
