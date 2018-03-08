@@ -7,7 +7,7 @@ python:
 
 
 install:
-  - cd genesis && python setup.py install
+  - python setup.py install
 
 script:
   - python -c "import genesis"
