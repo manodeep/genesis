@@ -5,20 +5,7 @@ python:
   - '3.5'
   - '3.6'
   
-os:
-  - linux
-  - osx
-
 install:
-  - |
-    set -e
-    if [ "$TRAVIS_OS_NAME" == "osx" ]; then
-        rvm get stable
-        which python || travis_retry brew install python && brew link --overwrite python
-        which python
-        python --version
-    fi
-                  
   - python setup.py install
 
 script:
