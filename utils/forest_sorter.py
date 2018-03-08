@@ -31,7 +31,6 @@ def parse_inputs():
     parser.add_option("-s", "--sort_id", dest="sort_id", help="Field name for the key we are sorting on. Default: ForestID.", default = "ForestID")
     parser.add_option("-m", "--mass_def", dest="sort_mass", help="Field name for the mass key we are sorting on. Default: Mass_200mean.", default = "Mass_200mean")
     parser.add_option("-i", "--HaloID", dest="halo_id", help="Field name for halo ID. Default: ID.", default = "ID")
-    parser.add_option("-d", "--debug", dest="debug", help="Set to 1 to toggle debug mode. Default: 0 (off).", default = 0)
     parser.add_option("-p", "--ID_fields", dest="ID_fields", help="Field names for those that contain IDs.  Default: ('ID', 'Tail', 'Head', 'NextSubHalo', 'Dummy1', 'Dumm2').", default = ("ID", "Tail", "Head", "NextSubHalo", "Dummy", "Dummy")) 
     parser.add_option("-x", "--index_mult_factor", dest="index_mult_factor", help="Conversion factor to go from a unique, per-snapshot halo index to a temporally unique haloID.  Default: 1e12.", default = 1e12)
 
@@ -61,8 +60,6 @@ def get_sort_indices(dataset, snap_key, opt):
         Mass_200mean = [4e9, 10e10, 8e8, 7e9, 3e11, 5e6]
         
         Then the indices would be [0, 3, 4, 5, 1, 2]
-
-    If the debug option has been specified in the runtime options (opt["debug"] == 1), then a check is run to ensure that the sorting has been correctly done.
 
     Parameters
     ----------
@@ -158,6 +155,42 @@ def index_to_temporalID(index, snapnum, index_mult_factor):
     return temporalID
 
 
+def get_snapkeys_and_nums(file_keys):
+    """
+
+    Grabs the names of the snapshot keys and associated snapshot
+    numbers from a given set of keys.
+    
+    We assume that the snapshot data keys are named to include the word
+    "snap" (case insensitive). We also assume that the snapshot number
+    for each snapshot key will be in a single cluster towards the end
+    of the key. If this is not the case we issue a warning showing what
+    we believe to be the corresponding snapshot number.
+
+    Parameters
+    ----------
+
+    file_keys: Keys. 
+        Keys from a given file or dataset.
+         
+    Returns
+    ----------
+
+    Snap_Keys: List of strings. 
+        Names of the snapshot keys within the passed keys.
+
+    Snap_Num: Dictionary of integers keyed by Snap_Keys.
+        Snapshot number of each snapshot key. 
+
+    """
+
+    Snap_Keys = [key for key in file_keys if (("SNAP" in key.upper()) == True)] 
+    Snap_Nums = dict() 
+    for key in Snap_Keys: 
+        Snap_Nums[key] = snap_key_to_snapnum(key) 
+
+    return Snap_Keys, Snap_Nums 
+
 def temporalID_to_snapnum(temporalID, index_mult_factor): 
     """
 
@@ -240,24 +273,16 @@ def sort_and_write_file(opt):
     """
 
     with h5py.File(opt["fname_in"], "r") as f_in, h5py.File(opt["fname_out"], "w") as f_out:
-    
-        # We assume that the snapshot data keys are named to include the word "snap" (case
-        # insensitive). We also assume that the snapshot number for each snapshot key will 
-        # be in a single cluster towards the end of the key. If this is not the case we 
-        # issue a warning showing what we believe to be the corresponding snapshot number.
 
-        Snap_Keys = [key for key in f_in.keys() if (("SNAP" in key.upper()) == True)] 
-        Snap_Nums = dict() 
-        for key in Snap_Keys: 
-            Snap_Nums[key] = snap_key_to_snapnum(key) 
+        Snap_Keys, Snap_Nums = get_snapkeys_and_nums(f_in.keys())
        
         ID_maps = dict() 
         snapshot_indices = dict() 
 
         print("")
         print("Generating the dictionary to map the oldIDs to the newIDs.")
-        if opt["debug"]:
-            start_time = time.time() 
+
+        start_time = time.time() 
         for snap_key in tqdm(Snap_Keys):
             if len(f_in[snap_key][opt["halo_id"]]) == 0:  # Skip empty snapshots. 
                 continue
@@ -270,14 +295,14 @@ def sort_and_write_file(opt):
                                               opt["index_mult_factor"])
                                               # HaloIDs are given by their snapshot-local index.
  
-            oldIDs_to_newIDs = dict(zip(old_haloIDs, new_haloIDs)) 
+            oldIDs_to_newIDs = dict(zip(old_haloIDs_sorted, new_haloIDs)) 
             
             snapshot_indices[snap_key] = indices  # Dictionary keyed by the snapshot field.
             ID_maps[Snap_Nums[snap_key]] = oldIDs_to_newIDs  # Nested dictionary keyed by snapnum. 
 
-        if opt["debug"]:
-            end_time = time.time() 
-            print("Creation of dictionary map took {0:3f} seconds".format(end_time - start_time))
+
+        end_time = time.time() 
+        print("Creation of dictionary map took {0:3f} seconds".format(end_time - start_time))
         print("Done!")
         print("")
 
@@ -291,7 +316,7 @@ def sort_and_write_file(opt):
         print("Now writing out the snapshots in the sorted order.")
         start_time = time.time()
  
-        for count, key in (enumerate(f_in.keys())):  # Loop through snapshots.           
+        for count, key in (enumerate(f_in.keys())):  # Loop through snapshots.
             copy_group(f_in, f_out, key, opt)
             for field in f_in[key]:  # Then through each field 
 
@@ -303,19 +328,17 @@ def sort_and_write_file(opt):
                 except KeyError:  # Some keys (e.g., 'Header') don't contain halos. 
                     continue
 
-                if field in opt["ID_fields"]:  # If we need to update the ID for this field. 
-                    to_write = np.empty((NHalos))
+                
+                if field in opt["ID_fields"]:  # If we need to update the ID for this field.
+                    newID = np.empty((NHalos)) 
                     for idx in range(NHalos):  # Loop through each halo.
                         oldID = f_in[key][field][idx] 
                         snapnum = temporalID_to_snapnum(oldID, opt["index_mult_factor"])
-                        to_write[idx]= ID_maps[snapnum][oldID]  # ID_maps is master-keyed by the snapshot 
-                                                                # number of the ID.
-                else:
-                    to_write = f_in[key][field][:]
+                        f_out[key][field][idx] = ID_maps[snapnum][oldID] 
+                
+                f_out[key][field][:] = f_out[key][field][:][snapshot_indices[key]] # Then reorder
 
-                f_out[key][field][:] = to_write[snapshot_indices[key]]  # Write the sorted output. 
-
-            if (count > 20) and (opt["debug"]):
+            if (count > 20):
                 break
 
         end_time = time.time() 

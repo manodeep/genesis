@@ -1,6 +1,71 @@
 #!/usr/bin/env python
 from __future__ import print_function
 import numpy as np
+from optparse import OptionParser
+import sys
+import h5py
+
+sys.path.append('../')
+import forest_sorter as fs
+ 
+def parse_inputs():
+    """
+
+    Parses the command line input arguments.
+    
+    Parameters
+    ----------
+
+    None.   
+ 
+    Returns
+    ----------
+
+    opt: optparse.Values.  Required.  
+        Values from the OptionParser package.  
+        Values are accessed through ``opt.Value`` and cast into a dictionary using ``vars(opt)`` 
+    """
+
+    parser = OptionParser()
+
+    parser.add_option("-f", "--fname_in", dest="fname_in", 
+                      help="Path to test HDF5 data. Default: ./test_data.hdf5", 
+                      default="./test_data.hdf5")
+    parser.add_option("-o", "--fname_out", dest="fname_out", 
+                      help="Path to sorted output HDF5 data file. Default: ./test_sorted.hdf5",
+                      default="./test_sorted.hdf5")
+    parser.add_option("-n", "--NHalos_test", dest="NHalos_test", 
+                      help="Minimum number of halos to test using. Default: 10,000", 
+                      default = 10000, type = int) 
+    parser.add_option("-s", "--sort_id", dest="sort_id", 
+                      help="Field name for the key we are sorting on. Default: ForestID.",  
+                      default = "ForestID")
+    parser.add_option("-m", "--mass_def", dest="sort_mass", 
+                      help="Field name for the mass key we are sorting on. Default: Mass_200mean.", 
+                      default = "Mass_200mean")
+    parser.add_option("-i", "--HaloID", dest="halo_id", 
+                      help="Field name for halo ID. Default: ID.", 
+                      default = "ID")
+    parser.add_option("-p", "--ID_fields", dest="ID_fields", 
+                      help="Field names for those that contain non-merger IDs.  Default: ('ID').",
+                      default = ("ID")) 
+    parser.add_option("-x", "--index_mult_factor", dest="index_mult_factor", 
+                      help="Conversion factor to go from a unique, per-snapshot halo index to a \
+                      temporally unique haloID.  Default: 1e12.", 
+                      default = 1e12)
+
+    (opt, args) = parser.parse_args()
+
+    # Print some useful startup info. #
+    print("")
+    print("Running test functions")
+    print("Performing tests on a minimum of {0} halos.".format(opt.NHalos_test))
+    print("The HaloID field for each halo is '{0}'.".format(opt.halo_id)) 
+    print("Sorting on the '{0}' field.".format(opt.sort_id))
+    print("Sub-Sorting on the '{0}' field.".format(opt.sort_mass))
+    print("")
+
+    return opt
 
 def test_sorted_indices(halo_id, match_id, match_mass, indices, opt):
     """
@@ -49,7 +114,7 @@ def test_sorted_indices(halo_id, match_id, match_mass, indices, opt):
  
     return True 
 
-def test_check_haloIDs(file_haloIDs, SnapNum, index_mult_factor):
+def test_check_haloIDs(opt):
     """
 
     As all haloIDs are temporally unique, given the snapshot number we should be able to recreate the haloIDs. 
@@ -69,21 +134,38 @@ def test_check_haloIDs(file_haloIDs, SnapNum, index_mult_factor):
     True if test passes, False otherwise.     
 
     """
+   
+    files = [opt["fname_in"], opt["fname_out"]]
 
-    generated_haloIDs = index_to_temporalID(np.arange(len(file_haloIDs)), SnapNum, index_mult_factor)
+    for file_to_test in files: 
+        with h5py.File(file_to_test, "r") as f_in:
+            Snap_Keys, Snap_Nums = fs.get_snapkeys_and_nums(f_in.keys())
+        
+            for snap_key in Snap_Keys:
+                if len(f_in[snap_key][opt["halo_id"]]) == 0:  # Skip empty snapshots. 
+                    continue
+
+                file_haloIDs = f_in[snap_key][opt["halo_id"]][:] 
+                generated_haloIDs = fs.index_to_temporalID(np.arange(len(file_haloIDs)), 
+                                                                     Snap_Nums[snap_key],
+                                                                     opt["index_mult_factor"])
     
-    if (np.array_equal(generated_haloIDs, file_haloIDs) == False):    
-        print("The HaloIDs for snapshot {0} did not match the formula.\nHaloIDs were {1} and the expected IDs were {2}".format(SnapNum, file_haloIDs, generated_haloIDs))
-        return False
+        if (np.array_equal(generated_haloIDs, file_haloIDs) == False):
+            print("The HaloIDs within file '{0}' were not correct.".format(file_to_test))
+            print("HaloIDs were {0} and the expected IDs were {1}.".format(file_haloIDs,
+                                                                           generated_haloIDs))
+            print("If this is the test input data file, then your input data is wrong!\n\
+If this is the test sorted output file, contact jseiler@swin.edu.au.")
+            return False
 
     return True
 
-def test_output_file(snapshot_group_in, snapshot_group_out, SnapNum, indices, opt): 
+def test_output_file(filename_in, filename_out, opt): 
     """
 
     Ensures that the output data file for a specified snapshot has been written in the properly sorted order.
 
-    Note: The ID fields are not validated because they are wrong by design.  If HaloID 1900000000001 had a descendant pointer (i.e., a 'Head' point in Treefrog) of 2100000000003, this may not be true because the ID of Halo 2100000000003 may be changed. 
+    Note: The merger ID fields are not validated because they are wrong by design.  If HaloID 1900000000001 had a descendant pointer (i.e., a 'Head' point in Treefrog) of 2100000000003, this may not be true because the ID of Halo 2100000000003 may be changed. 
  
     Parameters
     ----------
@@ -107,7 +189,6 @@ def test_output_file(snapshot_group_in, snapshot_group_out, SnapNum, indices, op
     True if test passes, False otherwise.     
     """
 
-    status = test_check_haloIDs(snapshot_group_out[opt["halo_id"]], SnapNum, opt["index_mult_factor"]) # Test that the new temporally unique haloIDs were done properly.
     if status == False:
         return False
 
@@ -126,3 +207,42 @@ def test_output_file(snapshot_group_in, snapshot_group_out, SnapNum, indices, op
             return False
     
     return True
+
+def create_test_input_data(opt):
+
+    with h5py.File(opt["fname_in"], "r") as f_in, h5py.File("./my_test_data.hdf5", "w") as f_out:
+        NHalos = 0
+        
+        Snap_Keys = [key for key in f_in.keys() if (("SNAP" in key.upper()) == True)] 
+        Snap_Nums = dict() 
+        for key in Snap_Keys: 
+            Snap_Nums[key] = fs.snap_key_to_snapnum(key) 
+
+        for snap_key in Snap_Keys:
+            if len(f_in[snap_key][opt["halo_id"]]) == 0:  # Skip empty snapshots. 
+                continue
+        
+            fs.copy_group(f_in, f_out, snap_key, opt)
+            NHalos += len(f_in[snap_key][opt["halo_id"]])
+
+            if NHalos >= opt["NHalos_test"]:
+                break
+
+    return "./my_test_data.hdf5"
+
+def tests(opt):
+
+    if "-f" in sys.argv: # User specified their own input data.
+        print("You have supplied your own test input data.")
+        print("Saving a small file with the first {0} Halos.".format(opt["NHalos_test"]))
+        opt["fname_in"] = create_test_input_data(opt)
+
+    fs.sort_and_write_file(opt)
+
+    test_check_haloIDs(opt) # Test that the new temporally unique haloIDs were done properly.
+    #test_output_file(opt)
+ 
+if __name__ == '__main__':
+    
+    opt = parse_inputs()
+    tests(vars(opt))
