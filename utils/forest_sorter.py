@@ -49,10 +49,12 @@ def parse_inputs():
 
     return opt
 
-def get_sort_indices(dataset, snap_key, opt):
+def get_sort_indices(file_in, snap_key, opt):
     """
 
-    Sorts the input HDF5 dataset using 2-keys given in "opt".  The first key specifies the order of the "outer-sort" with the second key specifying the order of the "inner-sort" within each group sorted by the first key. 
+    Gets the indices that will sort the HDF5 file using the two keys provided by the user in opt.
+    The first key specifies the order of the "outer-sort" with the second key specifying the order 
+    of the "inner-sort" within each group sorted by the first key. 
 
     Example:
         Outer-sort uses ForestID and inner-sort used Mass_200mean.
@@ -64,8 +66,9 @@ def get_sort_indices(dataset, snap_key, opt):
     Parameters
     ----------
 
-    dataset: HDF5 dataset.  Required.
-        Input HDF5 dataset that we are sorting over. The data structure is assumed to be HDF5_File -> List of Snapshot Numbers -> Halo properties/pointers.
+    file_in: HDF5 file.  Required.
+        Open HDF5 file that we are sorting for. The data structure is assumed to be 
+        HDF5_File -> List of Snapshot Numbers -> Halo properties/pointers.
 
     snap_key: String.  Required.
         The field name for the snapshot we are accessing.
@@ -80,7 +83,7 @@ def get_sort_indices(dataset, snap_key, opt):
         Array containing the indices that sorts the keys for the specified dataset. 
 
     """ 
-    indices = np.lexsort((dataset[snap_key][opt["sort_mass"]], dataset[snap_key][opt["sort_id"]])) # Sorts via the ID then sub-sorts via the mass
+    indices = np.lexsort((file_in[snap_key][opt["sort_mass"]], file_in[snap_key][opt["sort_id"]])) # Sorts via the ID then sub-sorts via the mass
 
     return indices
 
@@ -334,9 +337,12 @@ def sort_and_write_file(opt):
                     for idx in range(NHalos):  # Loop through each halo.
                         oldID = f_in[key][field][idx] 
                         snapnum = temporalID_to_snapnum(oldID, opt["index_mult_factor"])
-                        f_out[key][field][idx] = ID_maps[snapnum][oldID] 
-                
-                f_out[key][field][:] = f_out[key][field][:][snapshot_indices[key]] # Then reorder
+                        newID[idx] = int(ID_maps[snapnum][oldID])
+                    to_write = newID
+                else:
+                    to_write = f_in[key][field][:]               
+ 
+                f_out[key][field][:] = to_write[snapshot_indices[key]] # Then reorder output.
 
             if (count > 20):
                 break
