@@ -17,6 +17,6 @@ notifications:
   email:
     recipients:
       - jseiler@swin.edu.au 
-    on_success: change
+    on_success: change 
     on_failure: always
   
