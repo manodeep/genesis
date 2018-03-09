@@ -7,7 +7,7 @@ python:
   
 install:
   - python setup.py install
-
+  - pip install -r requirements.txt
 script:
   - python -c "import genesis"
   - python -c "import genesis; print(genesis.__version__)"
