@@ -11,6 +11,7 @@ install:
 script:
   - python -c "import genesis"
   - python -c "import genesis; print(genesis.__version__)"
+  - python3 genesis/utils/tests.py 
 
 notifications:
   email:
