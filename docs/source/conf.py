@@ -12,18 +12,17 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
-from os.path import abspath, dirname, join as pjoin
-import os
 import sys
-# sys.path.insert(0, os.path.abspath('.'))
+import os
+from os.path import abspath, dirname, join as pjoin
 
-this_dir = dirname(abspath(__file__))
-root_path = abspath(pjoin(this_dir,
-                              '../genesis/utils/'))
+#this_dir = dirname(abspath(__file__))
+#root_path = abspath(pjoin(this_dir,
+#                              '../../'))
+#if os.path.isdir(root_path):
+#    sys.path.insert(0, root_path)
 
-if os.path.isdir(root_path):
-    sys.path.insert(0, root_path)
-
+sys.path.insert(0, os.path.abspath('../..'))
 
 # -- Project information -----------------------------------------------------
 
@@ -51,7 +50,6 @@ extensions = [
     'sphinx.ext.doctest',
     'sphinx.ext.todo',
     'sphinx.ext.coverage',
-    'sphinx.ext.viewcode',
     'sphinx.ext.napoleon',
 ]
 
@@ -88,7 +86,7 @@ pygments_style = 'sphinx'
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'alabaster'
+html_theme = 'default'
 
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the

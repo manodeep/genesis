@@ -1,5 +1,5 @@
 .. genesis documentation master file, created by
-   sphinx-quickstart on Tue Aug  7 13:14:29 2018.
+   sphinx-quickstart on Tue Aug  7 14:54:18 2018.
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
@@ -7,17 +7,6 @@ Welcome to genesis's documentation!
 ===================================
 
 .. toctree::
-   :maxdepth: 2
-   :caption: Contents:
+   :maxdepth: 1
 
-   utils
-
-.. automodule:: genesis.utils
-   :members:
-
-Indices and tables
-==================
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+   api/genesis
