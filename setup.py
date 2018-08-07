@@ -48,7 +48,7 @@ def setup_packages():
         provides=[pkgname],
         packages=find_packages(),
         python_requires='>=3.5',
-        setup_requires=['setuptools'],
+        install_requires=['setuptools', 'numpy', 'h5py'],
     )
 
     setup(**metadata)
