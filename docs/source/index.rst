@@ -9,4 +9,5 @@ Welcome to genesis's documentation!
 .. toctree::
    :maxdepth: 1
 
+   utilities
    api/genesis
