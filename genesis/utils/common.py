@@ -2,6 +2,11 @@
 
 from __future__ import print_function
 
+__all__ = ("snap_key_to_snapnum", "index_to_temporalID",
+           "temporalID_to_snapnum", "get_snapkeys_and_nums", 
+           "copy_group", "get_halos_per_forest", "search_dict_of_lists", )
+
+
 def snap_key_to_snapnum(snap_key):
     """
     Given the name of a snapshot key, finds the associated snapshot number.
@@ -17,13 +22,13 @@ def snap_key_to_snapnum(snap_key):
     Parameters
     ----------
 
-    snap_key: String.  Required.
+    snap_key: String.
         The name of the snapshot key.
 
     Returns
     ----------
 
-    snapnum: Integer.  Required.
+    snapnum: Integer.
         The snapshot number that corresponds to the snapshot key.
 
     Examples
@@ -80,20 +85,20 @@ def index_to_temporalID(index, snapnum, index_mult_factor):
     Parameters
     ----------
 
-    index: array-like of integers, or integer. Required.
+    index: array-like of integers, or integer.
         Array or single value that describes the snapshot-local haloID.
 
-    snapnum: integer.  Required
+    snapnum: Integer.
         Snapshot that the halo/s are/is located at.
 
-    index_mult_factor: integer. Required
+    index_mult_factor: Integer.
         Factor to convert a the snapshot-unique halo index to a temporally
         unique halo ID.
 
     Returns
     ----------
     
-    index: array-like of integers, or integer. Required.
+    index: array-like of integers, or integer.
         Array or single value that contains the temporally unique haloID.
 
     Examples
@@ -101,16 +106,62 @@ def index_to_temporalID(index, snapnum, index_mult_factor):
 
     >>> index_to_temporalID(23, 18, 1e12)
     18000000000024
-
-#    >>> test_list = [25, 100, 4]
-#    >>> test_snapnums = [23, 12, 60]
-#    >>> index_to_temporalID(test_list, test_snapnums, 1e12)
-    [2300000026, 1200000101, 600000005] 
     """
 
     temporalID = snapnum*int(index_mult_factor) + index + 1
 
     return temporalID
+
+
+def temporalID_to_snapnum(temporalID, index_mult_factor):
+    """
+    Given a temporalID, return the corresponding snapshot number.
+
+    Parameters
+    ----------
+
+    ID: array-like of integers, or integer.
+        Array or single value that describes the temporalID/s.
+
+    index_mult_factor: integer.
+        Factor to convert to from temporally-unique halo ID to snap-shot unique
+        halo index.
+
+    Returns
+    ----------
+
+    snapnum: array-like of integers, or integer.
+        Array or single value that contains the snapshot number corresponding
+        to the temporal ID.
+
+    Examples
+    ----------
+
+    >>> temporalID_to_snapnum(-1, 1e12)
+    0
+
+    >>> temporalID_to_snapnum(18000000000001, 1e12)
+    18
+
+    >>> test_list = [18000000000001, 20000000000050, 134000000000005]
+    >>> temporalID_to_snapnum(test_list, 1e12)
+    array([ 18,  20, 134])
+
+
+    >>> import numpy as np
+    >>> test_array = np.array([20000000000050, 134000000000005])
+    >>> temporalID_to_snapnum(test_array, 1e12)
+    array([ 20, 134])
+    """
+
+    import numpy as np
+
+    if isinstance(temporalID, list) or isinstance(temporalID, np.ndarray):
+        snapnum = ((np.subtract(temporalID,1)) / index_mult_factor).astype(int)
+    else:
+        snapnum = int((temporalID - 1) / index_mult_factor)
+
+    return snapnum
 
 
 def get_snapkeys_and_nums(file_keys):
@@ -135,12 +186,8 @@ def get_snapkeys_and_nums(file_keys):
     Snap_Keys: List of strings.
         Names of the snapshot keys within the passed keys.
 
-    Snap_Num: Dictionary of integers keyed by Snap_Keys.
+    Snap_Nums: Dictionary of integers keyed by `Snap_Keys`.
         Snapshot number of each snapshot key.
-
-    Examples
-    ----------
-
     """
 
     Snap_Keys = [key for key in file_keys if ("SNAP" in key.upper())]
@@ -151,56 +198,6 @@ def get_snapkeys_and_nums(file_keys):
     return Snap_Keys, Snap_Nums
 
 
-def temporalID_to_snapnum(temporalID, index_mult_factor):
-    """
-    Given a temporalID, return the corresponding snapshot number.
-
-    Parameters
-    ----------
-
-    ID: array-like of integers, or integer. Required.
-        Array or single value that describes the temporalID/s.
-
-    index_mult_factor: integer. Required.
-        Factor to convert to from temporally-unique halo ID to snap-shot unique
-        halo index.
-
-    Returns
-    ----------
-
-    snapnum: array-like of integers, or integer. Required.
-        Array or single value that contains the snapshot number corresponding
-        to the temporal ID.
-
-    Examples
-    ----------
-
-    >>> temporalID_to_snapnum(-1, 1e12)
-    0
-
-    >>> temporalID_to_snapnum(18000000000001, 1e12)
-    18
-
-    >>> test_list = [18000000000001, 20000000000050, 134000000000005]
-    >>> temporalID_to_snapnum(test_list, 1e12)
-    array([ 18,  20, 134])
-
-
-    >>> import numpy as np
-    >>> test_array = np.array([20000000000050, 134000000000005])
-    >>> temporalID_to_snapnum(test_array, 1e12)
-    array([ 20, 134])
-
-    """
-    import numpy as np
-    if isinstance(temporalID, list) or isinstance(temporalID, np.ndarray):
-        snapnum = ((np.subtract(temporalID,1)) / index_mult_factor).astype(int)
-    else:
-        snapnum = int((temporalID - 1) / index_mult_factor)
-
-    return snapnum
-
-
 def copy_group(file_in, file_out, key):
     """
     Copies HDF5 group into a new HDF5 file (with same data-structure).
@@ -208,17 +205,17 @@ def copy_group(file_in, file_out, key):
     Parameters
     ----------
 
-    file_in, file_out: Open HDF5 files.  Required.
+    file_in, file_out: Open HDF5 files.
         HDF5 files for the data being copied (file_in) and the file the
         data is being copied to (file_out).
 
-    key: String.  Required.
+    key: String. 
         Name of the HDF5 group being copied.
 
     Returns
     ----------
-
-    None.
+    None
+        None
     """
 
     group_path = file_in[key].parent.name  # Name of the group path.
@@ -235,25 +232,21 @@ def get_halos_per_forest(f_in, Snap_Keys, haloID_field="ID",
     The resulting Dictionary is nested with the outer-key given by the ForestID
     and the inner-key given by the snapshot field name.
 
-    E.g., If forest 5 has 10 halos at Snapshot 20 and 100 at Snapshot 21 then,
-        NHalos_forest[5]['Snap_020'] = 10
-        NHalos_forest[5]['Snap_021'] = 100
-
     We also generate the offset for each Forest at each snapshot.  This is
     necessary because whilst Forest 5 may saved first at snapshot 20, it isn't
     necessarily saved first at snapshot 21.
 
-    ..note::
+    .. note::
         The default parameters are chosen to match the ASTRO3D Genesis trees as
         produced by VELOCIraptor + Treefrog.    
 
     Parameters
     ----------
 
-    f_in: Open HDF5 file. Required.
+    f_in: Open HDF5 file. 
         HDF5 file that contains the sorted trees.
 
-    Snap_Keys: List of strings. Required.
+    Snap_Keys: List of strings.
         List of keys that correspond to the fields containing the snapshot
         data.
 
@@ -266,12 +259,12 @@ def get_halos_per_forest(f_in, Snap_Keys, haloID_field="ID",
     Returns
     ----------
 
-    NHalos_forest: Nested Dictionary. Required.
+    NHalos_forest: Nested Dictionary.
         Nested dictionary that contains the number of halos for each Forest at
         each snapshot.  Outer-key is the ForestID and inner-key is the snapshot
         key.
 
-    NHalos_forest_offset: Nested Dictionary. Required.
+    NHalos_forest_offset: Nested Dictionary.
         Nested dictionary that contains the offset for each Forest at each
         snapshot. Outer-key is the ForestID and inner-key is the snapshot key.
         This is required because whilst the tree is sorted by ForestID, the
@@ -327,11 +320,61 @@ def get_halos_per_forest(f_in, Snap_Keys, haloID_field="ID",
     return NHalos_forest, NHalos_forest_offset
 
 
+def search_dict_of_lists(value, dictionary):
+    """
+    Search through a dictionary of lists for a given value.
+
+    Parameters
+    ----------
+
+    value: Any data-type.
+        The value that we are searching for in the lists.
+
+    dictionary: Dictionary of lists.
+        A dictionary of lists we're searching through. 
+ 
+    Returns
+    ----------
+
+    True
+        If the value is in the dictionary.
+
+    False
+        Otherwise.
+
+    Examples
+    ----------
+
+    >>> my_dict = {'People' : ['John', 'Mary', 'Joseph'],
+    ...            'Age'    : [21, 8, 87],
+    ...            'Height' : [186.4, 203.1, 87.8]}
+    >>> search_dict_of_lists("John", my_dict)
+    True
+
+    >>> search_dict_of_lists("Carol", my_dict)
+    False
+
+    >>> search_dict_of_lists(87, my_dict)
+    True
+
+    >>> search_dict_of_lists(5, my_dict)
+    False
+
+    >>> search_dict_of_lists(186.4, my_dict)
+    True
+
+    >>> search_dict_of_lists(186.9, my_dict)
+    False
+    """
+    
+    for key in dictionary.keys():
+        if value in dictionary[key]:
+            return True
+
+    return False
+
+
 if __name__ == "__main__":
     import doctest
     import numpy as np
-    test_list = [25, 100, 4]
-    test_snapnums = [23, 12, 60]
-    print(index_to_temporalID(list(np.arange(0,10)), list(np.arange(0,10)), 1e12))
-    print("QJTOETQ")
     doctest.testmod()
