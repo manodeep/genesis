@@ -9,7 +9,7 @@ import h5py
 from tqdm import tqdm
 import time
 
-from genesis.utils import common as cmn
+from astro3D.genesis.utils import common as cmn
 
 
 def get_sort_indices(file_in, snap_key, sort_fields, sort_direction):
