@@ -1,7 +1,7 @@
-genesis package
+astro3D package
 ===============
 
-.. automodule:: genesis
+.. automodule:: astro3D
     :members:
     :undoc-members:
     :show-inheritance:
@@ -11,5 +11,5 @@ Subpackages
 
 .. toctree::
 
-    genesis.utils
+    astro3D.genesis
 

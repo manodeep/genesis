@@ -3,7 +3,7 @@ import h5py
 import time
 from tqdm import tqdm
 
-from genesis.utils import common as cmn
+from astro3D.genesis.utils import common as cmn
 
 def convert_indices(fname_in, fname_out, 
                     haloID_field="ID", forestID_field="ForestID", 

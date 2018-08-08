@@ -10,4 +10,4 @@ Welcome to genesis's documentation!
    :maxdepth: 1
 
    utilities
-   api/genesis
+   api/astro3D

@@ -11,7 +11,7 @@ import os.path
 
 import time
 
-from genesis.utils import common as cmn
+from astro3D.genesis.utils import common as cmn
 
 
 def get_LHalo_datastruct():
